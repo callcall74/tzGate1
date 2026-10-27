@@ -168,6 +168,12 @@
     </header>
     <main>
       <p class="hint">주차장은 최대 5개까지 저장할 수 있습니다. 저장한 내용은 이 기기(브라우저)에 보관됩니다.</p>
+      <div class="card">
+        <h3>접속 비밀번호</h3>
+        <div class="field">
+          <input id="pwInput" type="password" placeholder="비밀번호" autocomplete="current-password">
+        </div>
+      </div>
       <div id="lotList"></div>
       <button class="btn ghost block" id="btnAdd" style="margin-bottom:14px">+ 주차장 추가</button>
       <button class="btn block" id="btnSave">저장</button>
@@ -181,7 +187,7 @@
 <script>
 (() => {
   // ---- 명령은 이 페이지를 제공한 서버의 /api/send 로 보냄 ----
-  // 실제 TCP 서버 주소(toozsystem.iptime.org:9800)는 서버 쪽(lib/gate.js)에만 있음
+  // 서버(lib/gate.js)가 비밀번호를 확인한 뒤 주차장 IP:Port 로 UDP 명령을 보냄
   const API_URL = location.protocol.startsWith('http')
     ? '/api/send'
     : 'http://localhost:8080/api/send'; // 파일로 직접 열었을 때
@@ -190,6 +196,7 @@
   const MAX_LOTS = 5;
   const KEY_LOTS = 'gate.lots';
   const KEY_CUR  = 'gate.current';
+  const KEY_PW   = 'gate.password';
 
   const $ = (id) => document.getElementById(id);
 
@@ -209,9 +216,16 @@
   function saveCur(i) {
     try { localStorage.setItem(KEY_CUR, String(i)); } catch {}
   }
+  function loadPw() {
+    try { return localStorage.getItem(KEY_PW) || ''; } catch { return ''; }
+  }
+  function savePw(v) {
+    try { v ? localStorage.setItem(KEY_PW, v) : localStorage.removeItem(KEY_PW); } catch {}
+  }
 
   let lots = loadLots();
   let cur = Math.min(loadCur(), Math.max(lots.length - 1, 0));
+  let password = loadPw();
 
   // ---------- 토스트 ----------
   let toastTimer;
@@ -236,6 +250,12 @@
     const lot = lots[cur];
     if (!lot) { toast('주차장을 먼저 설정해 주세요', true); return; }
     if (busy) return;
+    if (!password) {
+      const p = (window.prompt('접속 비밀번호를 입력하세요') || '').trim();
+      if (!p) return;
+      password = p;
+      savePw(p);
+    }
     busy = true;
     const label = `[${lot.name}] ${CMD_LABEL[cmd]}`;
     setStatus('wait', `${label} 전송 중...`);
@@ -244,14 +264,17 @@
       const res = await fetch(API_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cmd, ip: lot.ip, port: lot.port }),
+        body: JSON.stringify({ password, cmd, ip: lot.ip, port: lot.port }),
       });
       const data = await res.json().catch(() => ({}));
       if (res.ok && data.ok) {
-        const msg = data.reply ? `${label} 완료 - 응답: ${data.reply}` : `${label} 전송 완료`;
+        const msg = data.replied
+          ? `${label} 완료${data.reply ? ' - 응답: ' + data.reply : ''}`
+          : `${label} 전송함 (응답 없음)`;
         setStatus('on', msg);
         toast(msg);
       } else {
+        if (res.status === 401) { password = ''; savePw(''); } // 다음 버튼 때 다시 물어봄
         const msg = `${label} 실패 - ${data.error || '오류 ' + res.status}`;
         setStatus('off', msg);
         toast(msg, true);
@@ -339,6 +362,7 @@
   function openSettings() {
     draft = lots.map((l) => ({ ...l }));
     if (draft.length === 0) draft.push({ name: '', ip: '', port: '' });
+    $('pwInput').value = password;
     renderSettings();
     $('viewControl').hidden = true;
     $('viewSettings').hidden = false;
@@ -374,6 +398,8 @@
     }
     lots = cleaned.slice(0, MAX_LOTS);
     saveLots(lots);
+    password = $('pwInput').value.trim();
+    savePw(password);
     if (cur >= lots.length) { cur = 0; saveCur(0); }
     toast('저장되었습니다');
     closeSettings();
