@@ -1,0 +1,12 @@
+{
+  "name": "tzgate1",
+  "version": "1.0.0",
+  "private": true,
+  "description": "주차장 차단기 제어 웹",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

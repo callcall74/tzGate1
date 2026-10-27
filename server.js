@@ -1,0 +1,37 @@
+// 로컬 실행용 서버 (Vercel 과 같은 구조: index.html + POST /api/send)
+//
+// 실행:  node server.js     ->  http://localhost:8080/
+// 환경변수: PORT(기본 8080), TARGET_HOST, TARGET_PORT, REPLY_TIMEOUT_MS
+
+'use strict';
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const sendHandler = require('./api/send');
+
+const PORT = parseInt(process.env.PORT || '8080', 10);
+const INDEX_FILE = path.join(__dirname, 'index.html');
+
+const server = http.createServer((req, res) => {
+  const url = req.url.split('?')[0];
+
+  if (url === '/api/send') {
+    let raw = '';
+    req.on('data', (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
+    req.on('end', () => { req.body = raw; sendHandler(req, res); });
+    return;
+  }
+
+  if (req.method === 'GET' && (url === '/' || url === '/index.html')) {
+    fs.readFile(INDEX_FILE, (err, data) => {
+      if (err) { res.writeHead(500); res.end('index.html not found'); return; }
+      res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+      res.end(data);
+    });
+    return;
+  }
+
+  res.writeHead(404); res.end('Not Found');
+});
+
+server.listen(PORT, () => console.log(`http://localhost:${PORT}/`));

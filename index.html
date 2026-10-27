@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#05060f">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>차단기 제어</title>
+<style>
+  :root {
+    --bg: #202020;
+    --header: #05060f;
+    --btn: #000c78;
+    --btn-active: #1a2bd0;
+    --text: #ffffff;
+    --muted: #9aa0b4;
+    --ok: #2ecc71;
+    --err: #ff5c5c;
+    --warn: #f5b942;
+    --line: #34363f;
+    --input: #2c2e36;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 560px; margin: 0 auto; }
+
+  header {
+    background: var(--header);
+    border-bottom: 1px solid var(--line);
+    padding: 22px 20px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  header h1 {
+    flex: 1; margin: 0; font-size: 22px; font-weight: 700;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  header select {
+    flex: 1; min-width: 0;
+    background: transparent; color: var(--text); border: none;
+    font: inherit; font-size: 22px; font-weight: 700; padding: 0;
+    appearance: none; -webkit-appearance: none; cursor: pointer;
+  }
+  header select option { background: var(--header); font-size: 16px; }
+  .icon-btn {
+    background: none; border: none; color: var(--text); cursor: pointer;
+    width: 40px; height: 40px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .icon-btn:active { background: #ffffff22; }
+  .icon-btn svg { width: 24px; height: 24px; }
+
+  .status {
+    display: flex; align-items: center; gap: 8px;
+    padding: 12px 24px 0; font-size: 13px; color: var(--muted);
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); }
+  .dot.off { background: var(--err); }
+  .dot.wait { background: var(--warn); }
+
+  main { padding: 20px 24px 40px; }
+  .group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 36px; }
+  .cmd {
+    width: 100%; height: 108px;
+    background: var(--btn); color: var(--text);
+    border: none; border-radius: 6px;
+    font: inherit; font-size: 26px; font-weight: 500; letter-spacing: 2px;
+    cursor: pointer; user-select: none;
+    transition: background .1s, transform .1s;
+  }
+  .cmd.spaced { letter-spacing: 1.6em; padding-left: 1.6em; }
+  .cmd:active { background: var(--btn-active); transform: scale(.985); }
+  .cmd:disabled { opacity: .45; }
+
+  .notice {
+    margin: 40px 24px; padding: 20px; border: 1px dashed var(--line);
+    border-radius: 8px; color: var(--muted); text-align: center; line-height: 1.6;
+  }
+  .notice button { margin-top: 12px; }
+
+  /* settings */
+  .card {
+    background: #26282f; border: 1px solid var(--line); border-radius: 8px;
+    padding: 16px; margin-bottom: 14px;
+  }
+  .card h3 { margin: 0 0 12px; font-size: 15px; color: var(--muted); font-weight: 600; }
+  .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+  .field label { font-size: 13px; color: var(--muted); }
+  .field input {
+    background: var(--input); color: var(--text);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 12px; font: inherit; font-size: 16px;
+  }
+  .field input:focus { outline: none; border-color: var(--btn-active); }
+  .row { display: flex; gap: 10px; }
+  .row .field:first-child { flex: 2; }
+  .row .field:last-child { flex: 1; }
+  .btn {
+    background: var(--btn); color: var(--text); border: none; border-radius: 6px;
+    padding: 12px 18px; font: inherit; font-size: 15px; cursor: pointer;
+  }
+  .btn:active { background: var(--btn-active); }
+  .btn.ghost { background: transparent; border: 1px solid var(--line); }
+  .btn.danger { background: transparent; border: 1px solid #5a2a2a; color: var(--err); }
+  .btn.block { width: 100%; padding: 16px; font-size: 17px; }
+  .card-actions { display: flex; justify-content: flex-end; }
+  .hint { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 16px; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
+    background: #000000e6; color: #fff; padding: 12px 20px; border-radius: 22px;
+    font-size: 15px; opacity: 0; pointer-events: none; transition: all .2s;
+    max-width: calc(100% - 32px); text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: #8a1f1fe6; }
+
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- ===== 제어 화면 ===== -->
+  <section id="viewControl">
+    <header>
+      <h1 id="title">차단기 제어</h1>
+      <select id="lotSelect" aria-label="주차장 선택" hidden></select>
+      <button class="icon-btn" id="btnSettings" aria-label="설정">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+      </button>
+    </header>
+
+    <div class="status"><span class="dot" id="dot"></span><span id="statusText">연결 대기</span></div>
+
+    <main id="controls">
+      <div class="group">
+        <button class="cmd spaced" data-cmd="open">열림</button>
+        <button class="cmd spaced" data-cmd="close">닫힘</button>
+      </div>
+      <div class="group">
+        <button class="cmd" data-cmd="lock">열림 고정</button>
+        <button class="cmd" data-cmd="unlock">고정 해제</button>
+      </div>
+      <div class="group">
+        <button class="cmd spaced" data-cmd="reset">리셋</button>
+      </div>
+    </main>
+
+    <div class="notice" id="emptyNotice" hidden>
+      등록된 주차장이 없습니다.<br>설정에서 주차장을 추가해 주세요.<br>
+      <button class="btn" id="btnGoSettings">설정으로 이동</button>
+    </div>
+  </section>
+
+  <!-- ===== 설정 화면 ===== -->
+  <section id="viewSettings" hidden>
+    <header>
+      <button class="icon-btn" id="btnBack" aria-label="뒤로">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <h1>설정</h1>
+    </header>
+    <main>
+      <p class="hint">주차장은 최대 5개까지 저장할 수 있습니다. 저장한 내용은 이 기기(브라우저)에 보관됩니다.</p>
+      <div id="lotList"></div>
+      <button class="btn ghost block" id="btnAdd" style="margin-bottom:14px">+ 주차장 추가</button>
+      <button class="btn block" id="btnSave">저장</button>
+    </main>
+  </section>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(() => {
+  // ---- 명령은 이 페이지를 제공한 서버의 /api/send 로 보냄 ----
+  // 실제 TCP 서버 주소(toozsystem.iptime.org:9800)는 서버 쪽(lib/gate.js)에만 있음
+  const API_URL = location.protocol.startsWith('http')
+    ? '/api/send'
+    : 'http://localhost:8080/api/send'; // 파일로 직접 열었을 때
+
+  const CMD_LABEL = { open: '열림', close: '닫힘', lock: '열림 고정', unlock: '고정 해제', reset: '리셋' };
+  const MAX_LOTS = 5;
+  const KEY_LOTS = 'gate.lots';
+  const KEY_CUR  = 'gate.current';
+
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- 저장소 ----------
+  function loadLots() {
+    try {
+      const v = JSON.parse(localStorage.getItem(KEY_LOTS) || '[]');
+      return Array.isArray(v) ? v.slice(0, MAX_LOTS) : [];
+    } catch { return []; }
+  }
+  function saveLots(lots) {
+    try { localStorage.setItem(KEY_LOTS, JSON.stringify(lots)); } catch {}
+  }
+  function loadCur() {
+    try { return parseInt(localStorage.getItem(KEY_CUR) || '0', 10) || 0; } catch { return 0; }
+  }
+  function saveCur(i) {
+    try { localStorage.setItem(KEY_CUR, String(i)); } catch {}
+  }
+
+  let lots = loadLots();
+  let cur = Math.min(loadCur(), Math.max(lots.length - 1, 0));
+
+  // ---------- 토스트 ----------
+  let toastTimer;
+  function toast(msg, isErr) {
+    const t = $('toast');
+    t.textContent = msg;
+    t.classList.toggle('err', !!isErr);
+    t.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  }
+
+  // ---------- 명령 전송 ----------
+  let busy = false;
+
+  function setStatus(state, text) {
+    $('dot').className = 'dot ' + state;
+    $('statusText').textContent = text;
+  }
+
+  async function send(cmd) {
+    const lot = lots[cur];
+    if (!lot) { toast('주차장을 먼저 설정해 주세요', true); return; }
+    if (busy) return;
+    busy = true;
+    const label = `[${lot.name}] ${CMD_LABEL[cmd]}`;
+    setStatus('wait', `${label} 전송 중...`);
+    if (navigator.vibrate) navigator.vibrate(40);
+    try {
+      const res = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cmd, ip: lot.ip, port: lot.port }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        const msg = data.reply ? `${label} 완료 - 응답: ${data.reply}` : `${label} 전송 완료`;
+        setStatus('on', msg);
+        toast(msg);
+      } else {
+        const msg = `${label} 실패 - ${data.error || '오류 ' + res.status}`;
+        setStatus('off', msg);
+        toast(msg, true);
+      }
+    } catch (e) {
+      const msg = `${label} 실패 - 네트워크 오류`;
+      setStatus('off', msg);
+      toast(msg, true);
+    } finally {
+      busy = false;
+    }
+  }
+
+  // ---------- 제어 화면 ----------
+  function renderControl() {
+    const has = lots.length > 0;
+    $('controls').hidden = !has;
+    $('emptyNotice').hidden = has;
+
+    const sel = $('lotSelect');
+    if (lots.length > 1) {
+      sel.innerHTML = '';
+      lots.forEach((l, i) => {
+        const o = document.createElement('option');
+        o.value = i;
+        o.textContent = `${l.name} 차단기 제어 ▾`;
+        sel.appendChild(o);
+      });
+      sel.value = cur;
+      sel.hidden = false;
+      $('title').hidden = true;
+    } else {
+      sel.hidden = true;
+      $('title').hidden = false;
+      $('title').textContent = has ? `${lots[0].name} 차단기 제어` : '차단기 제어';
+    }
+    document.title = has ? `${lots[cur].name} 차단기` : '차단기 제어';
+  }
+
+  $('lotSelect').addEventListener('change', (e) => {
+    cur = parseInt(e.target.value, 10) || 0;
+    saveCur(cur);
+    renderControl();
+  });
+
+  document.querySelectorAll('.cmd').forEach((b) => {
+    b.addEventListener('click', () => send(b.dataset.cmd));
+  });
+
+  // ---------- 설정 화면 ----------
+  let draft = [];
+
+  function lotCard(lot, i) {
+    const div = document.createElement('div');
+    div.className = 'card';
+    div.innerHTML = `
+      <h3>주차장 ${i + 1}</h3>
+      <div class="field"><label>주차장 이름</label>
+        <input data-k="name" placeholder="예) 세명주차장" maxlength="30"></div>
+      <div class="row">
+        <div class="field"><label>주차장 IP</label>
+          <input data-k="ip" placeholder="192.168.0.10" inputmode="decimal" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
+        <div class="field"><label>Port</label>
+          <input data-k="port" placeholder="5000" inputmode="numeric"></div>
+      </div>
+      <div class="card-actions"><button class="btn danger" data-del>삭제</button></div>`;
+    div.querySelectorAll('input').forEach((inp) => {
+      inp.value = lot[inp.dataset.k] || '';
+      inp.addEventListener('input', () => { draft[i][inp.dataset.k] = inp.value.trim(); });
+    });
+    div.querySelector('[data-del]').addEventListener('click', () => {
+      draft.splice(i, 1);
+      renderSettings();
+    });
+    return div;
+  }
+
+  function renderSettings() {
+    const list = $('lotList');
+    list.innerHTML = '';
+    draft.forEach((l, i) => list.appendChild(lotCard(l, i)));
+    $('btnAdd').hidden = draft.length >= MAX_LOTS;
+  }
+
+  function openSettings() {
+    draft = lots.map((l) => ({ ...l }));
+    if (draft.length === 0) draft.push({ name: '', ip: '', port: '' });
+    renderSettings();
+    $('viewControl').hidden = true;
+    $('viewSettings').hidden = false;
+    window.scrollTo(0, 0);
+  }
+
+  function closeSettings() {
+    $('viewSettings').hidden = true;
+    $('viewControl').hidden = false;
+    renderControl();
+    window.scrollTo(0, 0);
+  }
+
+  $('btnSettings').addEventListener('click', openSettings);
+  $('btnGoSettings').addEventListener('click', openSettings);
+  $('btnBack').addEventListener('click', closeSettings);
+  $('btnAdd').addEventListener('click', () => {
+    if (draft.length >= MAX_LOTS) return;
+    draft.push({ name: '', ip: '', port: '' });
+    renderSettings();
+  });
+
+  $('btnSave').addEventListener('click', () => {
+    const cleaned = draft.filter((l) => l.name || l.ip || l.port);
+    for (let i = 0; i < cleaned.length; i++) {
+      const l = cleaned[i];
+      if (!l.name) return toast(`주차장 ${i + 1}: 이름을 입력하세요`, true);
+      if (!l.ip) return toast(`${l.name}: IP를 입력하세요`, true);
+      const p = Number(l.port);
+      if (!Number.isInteger(p) || p < 1 || p > 65535) return toast(`${l.name}: Port는 1~65535`, true);
+      if (/[\x00-\x1f]/.test(l.name + l.ip)) return toast(`${l.name}: 사용할 수 없는 문자`, true);
+      l.port = String(p);
+    }
+    lots = cleaned.slice(0, MAX_LOTS);
+    saveLots(lots);
+    if (cur >= lots.length) { cur = 0; saveCur(0); }
+    toast('저장되었습니다');
+    closeSettings();
+  });
+
+  // ---------- 시작 ----------
+  renderControl();
+  setStatus('', '준비');
+})();
+</script>
+</body>
+</html>
