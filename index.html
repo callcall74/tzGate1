@@ -337,10 +337,10 @@
   }
 
   // ---------- 영상 ----------
-  // rtsp:// 는 서버(/api/video)가 1초에 1장씩 JPEG 로 바꿔 15초 동안 보내줌.
+  // rtsp:// 는 서버(/api/video)가 1초에 2장씩 JPEG 로 바꿔 20초 동안 보내줌.
   // 응답은 JPEG 가 이어 붙은 것이므로 끝 표시(FF D9)마다 잘라서 한 장씩 표시.
   // http(s):// 주소(변환 서버의 재생 페이지 등)를 넣으면 그대로 보여줌.
-  const VIEW_SECONDS = 15;
+  const VIEW_SECONDS = 20;
   let shownVideo = null;
   let videoAbort = null;
 
@@ -422,7 +422,7 @@
         }
       }
       if (videoAbort !== ctrl) return;
-      videoMessage(frames ? '▶ 다시 보기 (15초)' : '영상을 가져오지 못했습니다. 눌러서 다시 시도', true);
+      videoMessage(frames ? '▶ 다시 보기 (20초)' : '영상을 가져오지 못했습니다. 눌러서 다시 시도', true);
     } catch (e) {
       if (videoAbort !== ctrl) return; // 주차장을 바꿔서 중단한 경우
       videoMessage(`영상 실패 - ${e.message === 'Failed to fetch' ? '네트워크 오류' : e.message}. 눌러서 다시 시도`, true);
@@ -452,7 +452,7 @@
     } else if (password) {
       playVideo();
     } else {
-      videoMessage('▶ 영상 보기 (15초)', true);
+      videoMessage('▶ 영상 보기 (20초)', true);
     }
   }
 
