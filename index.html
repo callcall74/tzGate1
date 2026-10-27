@@ -221,12 +221,19 @@
 
   const $ = (id) => document.getElementById(id);
 
+  // 처음 열었을 때(저장된 주차장 목록이 없을 때) 넣어 두는 기본 주차장
+  const DEFAULT_LOTS = [
+    { name: '무원마을입1', ip: 'km4593.iptime.org', port: '1102', rtsp: 'rtsp://toozoffice.iptime.org:554/chID=7' },
+  ];
+
   // ---------- 저장소 ----------
   function loadLots() {
     try {
-      const v = JSON.parse(localStorage.getItem(KEY_LOTS) || '[]');
+      const saved = localStorage.getItem(KEY_LOTS);
+      if (saved === null) return DEFAULT_LOTS.map((l) => ({ ...l }));
+      const v = JSON.parse(saved || '[]');
       return Array.isArray(v) ? v.slice(0, MAX_LOTS) : [];
-    } catch { return []; }
+    } catch { return DEFAULT_LOTS.map((l) => ({ ...l })); }
   }
   function saveLots(lots) {
     try { localStorage.setItem(KEY_LOTS, JSON.stringify(lots)); } catch {}
