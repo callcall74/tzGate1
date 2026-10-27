@@ -63,19 +63,32 @@
   .dot.off { background: var(--err); }
   .dot.wait { background: var(--warn); }
 
-  main { padding: 20px 24px 40px; }
-  .group { display: flex; flex-direction: column; gap: 12px; margin-bottom: 36px; }
+  main { padding: 16px 16px 24px; }
+  .group { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .group.small { grid-template-columns: 1fr 1fr 1fr; margin-bottom: 16px; }
   .cmd {
-    width: 100%; height: 108px;
+    width: 100%; height: 76px;
     background: var(--btn); color: var(--text);
     border: none; border-radius: 6px;
-    font: inherit; font-size: 26px; font-weight: 500; letter-spacing: 2px;
+    font: inherit; font-size: 24px; font-weight: 500; letter-spacing: 2px;
     cursor: pointer; user-select: none;
     transition: background .1s, transform .1s;
   }
-  .cmd.spaced { letter-spacing: 1.6em; padding-left: 1.6em; }
+  .group.small .cmd { height: 48px; font-size: 16px; letter-spacing: 0; }
+  .cmd.spaced { letter-spacing: .8em; padding-left: .8em; }
   .cmd:active { background: var(--btn-active); transform: scale(.985); }
   .cmd:disabled { opacity: .45; }
+
+  /* 영상 */
+  .video {
+    position: relative; width: 100%; aspect-ratio: 16 / 9;
+    background: #000; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
+  }
+  .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .video-msg {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    padding: 16px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6;
+  }
 
   .notice {
     margin: 40px 24px; padding: 20px; border: 1px dashed var(--line);
@@ -143,13 +156,12 @@
         <button class="cmd spaced" data-cmd="open">열림</button>
         <button class="cmd spaced" data-cmd="close">닫힘</button>
       </div>
-      <div class="group">
+      <div class="group small">
         <button class="cmd" data-cmd="lock">열림 고정</button>
         <button class="cmd" data-cmd="unlock">고정 해제</button>
+        <button class="cmd" data-cmd="reset">리셋</button>
       </div>
-      <div class="group">
-        <button class="cmd spaced" data-cmd="reset">리셋</button>
-      </div>
+      <div class="video" id="video"><div class="video-msg" id="videoMsg"></div></div>
     </main>
 
     <div class="notice" id="emptyNotice" hidden>
@@ -167,7 +179,7 @@
       <h1>설정</h1>
     </header>
     <main>
-      <p class="hint">주차장은 최대 5개까지 저장할 수 있습니다. 저장한 내용은 이 기기(브라우저)에 보관됩니다.</p>
+      <p class="hint">주차장은 최대 8개까지 저장할 수 있습니다. 저장한 내용은 이 기기(브라우저)에 보관됩니다.</p>
       <div class="card">
         <h3>접속 비밀번호</h3>
         <div class="field">
@@ -193,7 +205,7 @@
     : 'http://localhost:8080/api/send'; // 파일로 직접 열었을 때
 
   const CMD_LABEL = { open: '열림', close: '닫힘', lock: '열림 고정', unlock: '고정 해제', reset: '리셋' };
-  const MAX_LOTS = 5;
+  const MAX_LOTS = 8;
   const KEY_LOTS = 'gate.lots';
   const KEY_CUR  = 'gate.current';
   const KEY_PW   = 'gate.password';
@@ -312,6 +324,33 @@
       $('title').textContent = has ? `${lots[0].name} 차단기 제어` : '차단기 제어';
     }
     document.title = has ? `${lots[cur].name} 차단기` : '차단기 제어';
+    renderVideo();
+  }
+
+  // ---------- 영상 ----------
+  // rtsp:// 는 브라우저가 직접 재생하지 못하므로 변환 서버가 필요함.
+  // http(s):// 주소(변환 서버의 재생 페이지 등)를 넣으면 그대로 보여줌.
+  let shownVideo = null;
+  function renderVideo() {
+    const lot = lots[cur];
+    const url = (lot && lot.rtsp) || '';
+    $('video').hidden = !lot;
+    if (url === shownVideo) return;
+    shownVideo = url;
+    $('video').querySelectorAll('iframe').forEach((f) => f.remove());
+    const msg = $('videoMsg');
+    msg.hidden = false;
+    if (!url) {
+      msg.textContent = '영상 주소가 없습니다. 설정에서 RTSP 주소를 넣어 주세요.';
+    } else if (/^https?:\/\//i.test(url)) {
+      msg.hidden = true;
+      const f = document.createElement('iframe');
+      f.src = url;
+      f.allow = 'autoplay; fullscreen';
+      $('video').appendChild(f);
+    } else {
+      msg.textContent = 'RTSP 영상은 브라우저에서 바로 재생할 수 없어 영상 변환 서버가 필요합니다. (준비 중)';
+    }
   }
 
   $('lotSelect').addEventListener('change', (e) => {
@@ -340,6 +379,8 @@
         <div class="field"><label>Port</label>
           <input data-k="port" placeholder="5000" inputmode="numeric"></div>
       </div>
+      <div class="field"><label>영상 주소 (RTSP, 선택)</label>
+        <input data-k="rtsp" placeholder="rtsp://아이디:비번@abc.iptime.org:554/..." inputmode="url" autocapitalize="off" autocomplete="off" spellcheck="false"></div>
       <div class="card-actions"><button class="btn danger" data-del>삭제</button></div>`;
     div.querySelectorAll('input').forEach((inp) => {
       inp.value = lot[inp.dataset.k] || '';
@@ -361,7 +402,7 @@
 
   function openSettings() {
     draft = lots.map((l) => ({ ...l }));
-    if (draft.length === 0) draft.push({ name: '', ip: '', port: '' });
+    if (draft.length === 0) draft.push({ name: '', ip: '', port: '', rtsp: '' });
     $('pwInput').value = password;
     renderSettings();
     $('viewControl').hidden = true;
@@ -381,7 +422,7 @@
   $('btnBack').addEventListener('click', closeSettings);
   $('btnAdd').addEventListener('click', () => {
     if (draft.length >= MAX_LOTS) return;
-    draft.push({ name: '', ip: '', port: '' });
+    draft.push({ name: '', ip: '', port: '', rtsp: '' });
     renderSettings();
   });
 
@@ -394,6 +435,7 @@
       const p = Number(l.port);
       if (!Number.isInteger(p) || p < 1 || p > 65535) return toast(`${l.name}: Port는 1~65535`, true);
       if (/[\x00-\x1f]/.test(l.name + l.ip)) return toast(`${l.name}: 사용할 수 없는 문자`, true);
+      if (l.rtsp && !/^(rtsp|https?):\/\/\S+$/i.test(l.rtsp)) return toast(`${l.name}: 영상 주소는 rtsp:// 로 시작해야 합니다`, true);
       l.port = String(p);
     }
     lots = cleaned.slice(0, MAX_LOTS);
