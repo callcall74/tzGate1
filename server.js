@@ -1,4 +1,4 @@
-// 로컬 실행용 서버 (Vercel 과 같은 구조: index.html + POST /api/send)
+// 로컬 실행용 서버 (Vercel 과 같은 구조: index.html + POST /api/send, /api/video)
 //
 // 실행:  node server.js     ->  http://localhost:8080/
 // 환경변수: PORT(기본 8080), GATE_PASSWORD(접속 비밀번호, 필수), REPLY_TIMEOUT_MS
@@ -7,7 +7,10 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const sendHandler = require('./api/send');
+const API = {
+  '/api/send': require('./api/send'),
+  '/api/video': require('./api/video'),
+};
 
 const PORT = parseInt(process.env.PORT || '8080', 10);
 const INDEX_FILE = path.join(__dirname, 'index.html');
@@ -15,10 +18,10 @@ const INDEX_FILE = path.join(__dirname, 'index.html');
 const server = http.createServer((req, res) => {
   const url = req.url.split('?')[0];
 
-  if (url === '/api/send') {
+  if (API[url]) {
     let raw = '';
     req.on('data', (c) => { raw += c; if (raw.length > 4096) req.destroy(); });
-    req.on('end', () => { req.body = raw; sendHandler(req, res); });
+    req.on('end', () => { req.body = raw; API[url](req, res); });
     return;
   }
 

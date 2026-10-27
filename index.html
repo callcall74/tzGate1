@@ -84,10 +84,15 @@
     position: relative; width: 100%; aspect-ratio: 16 / 9;
     background: #000; border: 1px solid var(--line); border-radius: 6px; overflow: hidden;
   }
-  .video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+  .video iframe, .video img { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; object-fit: contain; }
   .video-msg {
     position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     padding: 16px; text-align: center; color: var(--muted); font-size: 13px; line-height: 1.6;
+  }
+  .video-msg.play { cursor: pointer; color: #fff; font-size: 15px; background: #00000080; }
+  .video-badge {
+    position: absolute; top: 8px; right: 8px; padding: 2px 8px; border-radius: 10px;
+    background: #000000a0; color: #fff; font-size: 12px;
   }
 
   .notice {
@@ -161,7 +166,11 @@
         <button class="cmd" data-cmd="unlock">고정 해제</button>
         <button class="cmd" data-cmd="reset">리셋</button>
       </div>
-      <div class="video" id="video"><div class="video-msg" id="videoMsg"></div></div>
+      <div class="video" id="video">
+        <img id="videoImg" alt="" hidden>
+        <span class="video-badge" id="videoBadge" hidden></span>
+        <div class="video-msg" id="videoMsg"></div>
+      </div>
     </main>
 
     <div class="notice" id="emptyNotice" hidden>
@@ -200,9 +209,9 @@
 (() => {
   // ---- 명령은 이 페이지를 제공한 서버의 /api/send 로 보냄 ----
   // 서버(lib/gate.js)가 비밀번호를 확인한 뒤 주차장 IP:Port 로 UDP 명령을 보냄
-  const API_URL = location.protocol.startsWith('http')
-    ? '/api/send'
-    : 'http://localhost:8080/api/send'; // 파일로 직접 열었을 때
+  const API_BASE = location.protocol.startsWith('http') ? '' : 'http://localhost:8080'; // 파일로 직접 열었을 때
+  const API_URL = API_BASE + '/api/send';
+  const VIDEO_URL = API_BASE + '/api/video';
 
   const CMD_LABEL = { open: '열림', close: '닫힘', lock: '열림 고정', unlock: '고정 해제', reset: '리셋' };
   const MAX_LOTS = 8;
@@ -328,30 +337,128 @@
   }
 
   // ---------- 영상 ----------
-  // rtsp:// 는 브라우저가 직접 재생하지 못하므로 변환 서버가 필요함.
+  // rtsp:// 는 서버(/api/video)가 1초에 1장씩 JPEG 로 바꿔 15초 동안 보내줌.
+  // 응답은 JPEG 가 이어 붙은 것이므로 끝 표시(FF D9)마다 잘라서 한 장씩 표시.
   // http(s):// 주소(변환 서버의 재생 페이지 등)를 넣으면 그대로 보여줌.
+  const VIEW_SECONDS = 15;
   let shownVideo = null;
+  let videoAbort = null;
+
+  function videoMessage(text, playable) {
+    const msg = $('videoMsg');
+    msg.hidden = false;
+    msg.textContent = text;
+    msg.classList.toggle('play', !!playable);
+  }
+
+  function stopVideo() {
+    if (videoAbort) { videoAbort.abort(); videoAbort = null; }
+    $('videoBadge').hidden = true;
+  }
+
+  function showFrame(bytes) {
+    const img = $('videoImg');
+    const old = img.src;
+    img.src = URL.createObjectURL(new Blob([bytes], { type: 'image/jpeg' }));
+    img.hidden = false;
+    if (old.startsWith('blob:')) URL.revokeObjectURL(old);
+  }
+
+  // end 앞쪽에서 사진 시작(FF D8)의 마지막 위치
+  function lastIndexOfSoi(buf, end) {
+    for (let i = end - 2; i > 0; i--) {
+      if (buf[i - 1] === 0xff && buf[i] === 0xd8) return i - 1;
+    }
+    return 0;
+  }
+
+  async function playVideo() {
+    const lot = lots[cur];
+    if (!lot || !/^rtsp:\/\//i.test(lot.rtsp || '') || videoAbort) return;
+    if (!password) {
+      const p = (window.prompt('접속 비밀번호를 입력하세요') || '').trim();
+      if (!p) return;
+      password = p;
+      savePw(p);
+    }
+    const ctrl = new AbortController();
+    videoAbort = ctrl;
+    videoMessage('영상 불러오는 중...');
+    let frames = 0;
+    try {
+      const res = await fetch(VIDEO_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password, rtsp: lot.rtsp }),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) { password = ''; savePw(''); }
+        throw new Error(data.error || '오류 ' + res.status);
+      }
+      const reader = res.body.getReader();
+      let buf = new Uint8Array(0);
+      let startedAt = 0;
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const next = new Uint8Array(buf.length + value.length);
+        next.set(buf); next.set(value, buf.length);
+        buf = next;
+        // 다 받은 사진(FF D9 로 끝남) 중 가장 최근 것을 표시
+        let end = -1;
+        for (let i = 1; i < buf.length; i++) {
+          if (buf[i - 1] === 0xff && buf[i] === 0xd9) end = i + 1;
+        }
+        if (end > 0) {
+          showFrame(buf.slice(lastIndexOfSoi(buf, end), end));
+          buf = buf.slice(end);
+          if (!frames++) startedAt = Date.now();
+          $('videoMsg').hidden = true;
+          const left = Math.max(0, VIEW_SECONDS - Math.floor((Date.now() - startedAt) / 1000));
+          $('videoBadge').textContent = `실시간 ${left}초`;
+          $('videoBadge').hidden = false;
+        }
+      }
+      if (videoAbort !== ctrl) return;
+      videoMessage(frames ? '▶ 다시 보기 (15초)' : '영상을 가져오지 못했습니다. 눌러서 다시 시도', true);
+    } catch (e) {
+      if (videoAbort !== ctrl) return; // 주차장을 바꿔서 중단한 경우
+      videoMessage(`영상 실패 - ${e.message === 'Failed to fetch' ? '네트워크 오류' : e.message}. 눌러서 다시 시도`, true);
+    } finally {
+      if (videoAbort === ctrl) videoAbort = null;
+      $('videoBadge').hidden = true;
+    }
+  }
+
   function renderVideo() {
     const lot = lots[cur];
     const url = (lot && lot.rtsp) || '';
     $('video').hidden = !lot;
     if (url === shownVideo) return;
     shownVideo = url;
+    stopVideo();
     $('video').querySelectorAll('iframe').forEach((f) => f.remove());
-    const msg = $('videoMsg');
-    msg.hidden = false;
+    $('videoImg').hidden = true;
     if (!url) {
-      msg.textContent = '영상 주소가 없습니다. 설정에서 RTSP 주소를 넣어 주세요.';
+      videoMessage('영상 주소가 없습니다. 설정에서 RTSP 주소를 넣어 주세요.');
     } else if (/^https?:\/\//i.test(url)) {
-      msg.hidden = true;
+      $('videoMsg').hidden = true;
       const f = document.createElement('iframe');
       f.src = url;
       f.allow = 'autoplay; fullscreen';
       $('video').appendChild(f);
+    } else if (password) {
+      playVideo();
     } else {
-      msg.textContent = 'RTSP 영상은 브라우저에서 바로 재생할 수 없어 영상 변환 서버가 필요합니다. (준비 중)';
+      videoMessage('▶ 영상 보기 (15초)', true);
     }
   }
+
+  $('videoMsg').addEventListener('click', () => {
+    if ($('videoMsg').classList.contains('play')) playVideo();
+  });
 
   $('lotSelect').addEventListener('change', (e) => {
     cur = parseInt(e.target.value, 10) || 0;

@@ -1,6 +1,7 @@
 {
   "regions": ["icn1"],
   "functions": {
-    "api/send.js": { "maxDuration": 10 }
+    "api/send.js": { "maxDuration": 10 },
+    "api/video.js": { "maxDuration": 30, "includeFiles": "node_modules/ffmpeg-static/ffmpeg" }
   }
 }
