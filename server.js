@@ -1,7 +1,7 @@
-// 로컬 실행용 서버 (Vercel 과 같은 구조: index.html + POST /api/send, /api/video)
+// 로컬 실행용 서버 (Vercel 과 같은 구조: index.html + POST /api/send, /api/video, GET /api/config)
 //
 // 실행:  node server.js     ->  http://localhost:8080/
-// 환경변수: PORT(기본 8080), GATE_PASSWORD(접속 비밀번호, 필수), REPLY_TIMEOUT_MS
+// 환경변수: PORT(기본 8080), GATE_PASSWORD(접속 비밀번호, 필수), GATE_LOTS(주차장 목록, lib/lots.js 참고), REPLY_TIMEOUT_MS
 
 'use strict';
 const http = require('http');
@@ -10,6 +10,7 @@ const path = require('path');
 const API = {
   '/api/send': require('./api/send'),
   '/api/video': require('./api/video'),
+  '/api/config': require('./api/config'),
 };
 
 const PORT = parseInt(process.env.PORT || '8080', 10);

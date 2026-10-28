@@ -1,4 +1,4 @@
-// Vercel 서버리스 함수: POST /api/send  { cmd, ip, port }
+// Vercel 서버리스 함수: POST /api/send  { password, cmd, ip, port } 또는 { password, cmd, lot }
 'use strict';
 const { handleCommand } = require('../lib/gate');
 

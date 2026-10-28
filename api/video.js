@@ -1,4 +1,4 @@
-// Vercel 서버리스 함수: POST /api/video  { password, rtsp }  ->  JPEG 사진이 이어진 스트림
+// Vercel 서버리스 함수: POST /api/video  { password, rtsp } 또는 { password, lot }  ->  JPEG 사진이 이어진 스트림
 'use strict';
 const { handleVideo } = require('../lib/video');
 
