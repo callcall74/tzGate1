@@ -129,6 +129,11 @@
   .btn.block { width: 100%; padding: 16px; font-size: 17px; }
   .card-actions { display: flex; justify-content: flex-end; }
   .hint { color: var(--muted); font-size: 13px; line-height: 1.5; margin: 0 0 16px; }
+  .admin-link {
+    display: block; margin: 8px auto 24px; padding: 6px 12px;
+    background: none; border: none; color: #5c6070; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .admin-link:active { color: var(--muted); }
 
   .toast {
     position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%) translateY(20px);
@@ -175,9 +180,11 @@
     </main>
 
     <div class="notice" id="emptyNotice" hidden>
-      등록된 주차장이 없습니다.<br>설정에서 주차장을 추가해 주세요.<br>
+      <span id="emptyText">등록된 주차장이 없습니다.<br>설정에서 주차장을 추가해 주세요.</span><br>
       <button class="btn" id="btnGoSettings">설정으로 이동</button>
     </div>
+
+    <button class="admin-link" id="btnAdmin" hidden>관리자</button>
   </section>
 
   <!-- ===== 설정 화면 ===== -->
@@ -186,11 +193,11 @@
       <button class="icon-btn" id="btnBack" aria-label="뒤로">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
       </button>
-      <h1>설정</h1>
+      <h1 id="settingsTitle">설정</h1>
     </header>
     <main>
       <p class="hint" id="settingsHint">주차장은 최대 8개까지 저장할 수 있습니다. 저장한 내용은 이 기기(브라우저)에 보관됩니다.</p>
-      <div class="card">
+      <div class="card" id="pwCard">
         <h3>접속 비밀번호</h3>
         <div class="field">
           <input id="pwInput" type="password" placeholder="비밀번호" autocomplete="current-password">
@@ -214,6 +221,7 @@
   const API_URL = API_BASE + '/api/send';
   const VIDEO_URL = API_BASE + '/api/video';
   const CONFIG_URL = API_BASE + '/api/config';
+  const ADMIN_URL = API_BASE + '/api/admin';
 
   const CMD_LABEL = { open: '열림', close: '닫힘', lock: '열림 고정', unlock: '고정 해제', reset: '리셋' };
   const MAX_LOTS = 8;
@@ -265,6 +273,7 @@
     try {
       const res = await fetch(CONFIG_URL, { cache: 'no-store' });
       const cfg = res.ok ? await res.json() : null;
+      $('btnAdmin').hidden = !(cfg && cfg.admin);
       if (!cfg || !cfg.managed) return;
       managed = true;
       // rtsp 주소는 서버에만 있으므로, 영상 표시 구분용으로 주차장마다 다른 표시만 넣어 둠
@@ -344,6 +353,11 @@
     const has = lots.length > 0;
     $('controls').hidden = !has;
     $('emptyNotice').hidden = has;
+    if (managed) {
+      // 서버 관리 방식에서는 설정 화면에서 주차장을 추가할 수 없음
+      $('emptyText').innerHTML = '등록된 주차장이 없습니다.<br>관리자 버튼에서 주차장을 추가해 주세요.';
+      $('btnGoSettings').hidden = true;
+    }
 
     const sel = $('lotSelect');
     if (lots.length > 1) {
@@ -537,16 +551,30 @@
     $('btnAdd').hidden = draft.length >= MAX_LOTS;
   }
 
-  function openSettings() {
-    draft = lots.map((l) => ({ ...l }));
+  // 관리자 모드: 서버의 주차장 목록(IP/Port/RTSP 포함)을 고쳐서 서버에 저장.
+  // 관리자 비밀번호는 저장하지 않고 설정 화면을 닫으면 잊음.
+  let adminPw = '';
+  const LOCAL_HINT = $('settingsHint').textContent;
+
+  // adminLots: 관리자 모드일 때 서버에서 받은 전체 목록
+  function openSettings(adminLots) {
+    const admin = Array.isArray(adminLots);
+    if (!admin) adminPw = '';
+    draft = (admin ? adminLots : lots).map((l) => ({ ...l }));
     if (draft.length === 0) draft.push({ name: '', ip: '', port: '', rtsp: '' });
     $('pwInput').value = password;
-    if (managed) {
+    $('pwCard').hidden = admin;
+    $('settingsTitle').textContent = admin ? '관리자 - 주차장 관리' : '설정';
+    if (admin) {
+      $('settingsHint').textContent = '관리자 모드: 저장하면 이 사이트를 쓰는 모든 기기에 바로 반영됩니다.';
+      renderSettings();
+    } else if (managed) {
       // 주차장 목록은 서버에서 정하므로 비밀번호만 바꿀 수 있음
       $('settingsHint').textContent = '주차장 목록은 서버에서 관리합니다. 비밀번호는 이 기기(브라우저)에 보관됩니다.';
       $('lotList').innerHTML = '';
       $('btnAdd').hidden = true;
     } else {
+      $('settingsHint').textContent = LOCAL_HINT;
       renderSettings();
     }
     $('viewControl').hidden = true;
@@ -555,14 +583,38 @@
   }
 
   function closeSettings() {
+    adminPw = '';
     $('viewSettings').hidden = true;
     $('viewControl').hidden = false;
     renderControl();
     window.scrollTo(0, 0);
   }
 
-  $('btnSettings').addEventListener('click', openSettings);
-  $('btnGoSettings').addEventListener('click', openSettings);
+  $('btnSettings').addEventListener('click', () => openSettings());
+  $('btnGoSettings').addEventListener('click', () => openSettings());
+
+  async function adminRequest(body) {
+    const res = await fetch(ADMIN_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || '오류 ' + res.status);
+    return data;
+  }
+
+  $('btnAdmin').addEventListener('click', async () => {
+    const p = (window.prompt('관리자 비밀번호를 입력하세요') || '').trim();
+    if (!p) return;
+    try {
+      const data = await adminRequest({ adminPassword: p, action: 'get' });
+      adminPw = p;
+      openSettings(data.lots);
+    } catch (e) {
+      toast(e.message === 'Failed to fetch' ? '네트워크 오류' : e.message, true);
+    }
+  });
   $('btnBack').addEventListener('click', closeSettings);
   $('btnAdd').addEventListener('click', () => {
     if (draft.length >= MAX_LOTS) return;
@@ -570,14 +622,8 @@
     renderSettings();
   });
 
-  $('btnSave').addEventListener('click', () => {
-    if (managed) {
-      password = $('pwInput').value.trim();
-      savePw(password);
-      toast('저장되었습니다');
-      closeSettings();
-      return;
-    }
+  // 입력한 주차장 목록 검사. 문제가 있으면 안내하고 undefined
+  function cleanDraft() {
     const cleaned = draft.filter((l) => l.name || l.ip || l.port);
     for (let i = 0; i < cleaned.length; i++) {
       const l = cleaned[i];
@@ -589,7 +635,34 @@
       if (l.rtsp && !/^(rtsp|https?):\/\/\S+$/i.test(l.rtsp)) return toast(`${l.name}: 영상 주소는 rtsp:// 로 시작해야 합니다`, true);
       l.port = String(p);
     }
-    lots = cleaned.slice(0, MAX_LOTS);
+    return cleaned.slice(0, MAX_LOTS);
+  }
+
+  $('btnSave').addEventListener('click', async () => {
+    if (adminPw) {
+      const list = cleanDraft();
+      if (!list) return;
+      try {
+        await adminRequest({ adminPassword: adminPw, action: 'save', lots: list });
+      } catch (e) {
+        return toast(`저장 실패 - ${e.message === 'Failed to fetch' ? '네트워크 오류' : e.message}`, true);
+      }
+      await loadServerConfig();
+      shownVideo = null; // 같은 번호라도 주차장이 바뀌었을 수 있으므로 영상 다시 표시
+      toast('저장되었습니다 (모든 기기에 반영)');
+      closeSettings();
+      return;
+    }
+    if (managed) {
+      password = $('pwInput').value.trim();
+      savePw(password);
+      toast('저장되었습니다');
+      closeSettings();
+      return;
+    }
+    const cleaned = cleanDraft();
+    if (!cleaned) return;
+    lots = cleaned;
     saveLots(lots);
     password = $('pwInput').value.trim();
     savePw(password);
@@ -600,13 +673,7 @@
 
   // ---------- 시작 ----------
   setStatus('', '준비');
-  loadServerConfig().then(() => {
-    if (managed && lots.length === 0) {
-      // GATE_LOTS 설정이 잘못된 경우 (서버 로그에 이유가 남음)
-      $('emptyNotice').innerHTML = '서버의 주차장 설정(GATE_LOTS)이 잘못되었습니다.<br>관리자에게 문의해 주세요.';
-    }
-    renderControl();
-  });
+  loadServerConfig().then(renderControl);
 })();
 </script>
 </body>
